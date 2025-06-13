@@ -33,6 +33,10 @@ security_ir_client = boto3.client("security-ir")
 event_client = boto3.client("events")
 dynamodb = boto3.resource("dynamodb")
 
+# tag for comments sourced from Security IR
+UPDATE_TAG_TO_ADD = "[AWS Security Incident Response Update]"
+UPDATE_TAG_TO_SKIP = "[JIRA Update]"
+
 try:
     # This import works for lambda function and imports the lambda layer at runtime
     from jira_sir_mapper import (
@@ -185,14 +189,17 @@ class AttachmentService:
             jira_attachments: List of Jira attachments
         """
         for ir_attachment in ir_attachments:
-            ir_attachment_id = ir_attachment["attachmentId"]
-            ir_attachment_name = ir_attachment["fileName"]
+            ir_attachment_id = ir_attachment["id"]
+            ir_attachment_name = ir_attachment["filename"]
 
             # Check if attachment already exists in Jira
             if not self.check_if_exists(jira_attachments, ir_attachment_name):
-                self._add_attachment(
-                    jira_issue_id, ir_case_id, ir_attachment_id, ir_attachment_name
-                )
+                try:
+                    self._add_attachment(
+                        jira_issue_id, ir_case_id, ir_attachment_id, ir_attachment_name
+                    )
+                except Exception as e:
+                    logger.error(f"Error adding attachment to security IR case: {e}")
 
     def _add_attachment(
         self,
@@ -274,13 +281,20 @@ class CommentService:
         """
         ir_comment_bodies = [comment["body"] for comment in ir_comments]
         jira_comment_bodies = [comment.body for comment in jira_comments]
+        logger.info(f"IR comments: {ir_comment_bodies}")
+        logger.info(f"Jira comments: {jira_comment_bodies}")
 
+        # only add comments to the Jira issue if they are:
+        #   not in the Jira issue
+        #   did not originate from the Jira issue
         for ir_comment in ir_comment_bodies:
+            logger.info(f"IR comment: {ir_comment}")
             if (
-                "[JIRA UPDATE]" not in str(ir_comment)
+                str(f"{UPDATE_TAG_TO_SKIP}") not in ir_comment
                 and str(ir_comment) not in jira_comment_bodies
             ):
                 logger.info(f"Adding comment to Jira issue {jira_issue_id}")
+                ir_comment = f"{UPDATE_TAG_TO_ADD} {ir_comment}"
                 self.jira_client.add_comment(jira_issue_id, ir_comment)
 
 
@@ -490,7 +504,7 @@ class IncidentService:
             self.jira_client.sync_watchers(jira_issue_id, sir_watchers)
 
         except Exception as e:
-            logger.error(f"Error processing incident details: {str(e)}")
+            logger.error(f"Error processing incident details: {e}")
 
     def create_or_update_issue(self, ir_case: Dict[str, Any]) -> Optional[str]:
         """
