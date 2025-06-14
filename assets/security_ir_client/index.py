@@ -102,13 +102,13 @@ def process_jira_event(jira_issue: dict) -> None:
                 )
 
         # add comments
-        if jira_issue_detail["comments"]:
-            for comment in jira_issue_detail["comments"]:
-                logger.info(f"Adding comment to Security IR case {security_ir_case_id}")
-                incident_service.add_comment_to_security_ir_case(
-                    security_ir_case_id=security_ir_case_id,
-                    ir_case_comment=comment["body"],
-                )
+        # if jira_issue_detail["comments"]:
+        #     for comment in jira_issue_detail["comments"]:
+        #         logger.info(f"Adding comment to Security IR case {security_ir_case_id}")
+                # incident_service.add_comment_to_security_ir_case(
+                #     security_ir_case_id=security_ir_case_id,
+                #     ir_case_comment=comment["body"],
+                # )
 
     elif jira_event_type == "IssueUpdated":
         # add comment
@@ -142,22 +142,27 @@ def process_jira_event(jira_issue: dict) -> None:
             jira_comment_bodies = [comment["body"] for comment in jira_comments]
 
             # add missing comments to case
+            # iterate Jira comments
             for jira_comment in jira_comment_bodies:
-
-                logger.info(f"Comment - Tag to skip: {UPDATE_TAG_TO_SKIP} Jira Comment: {jira_comment}")
-                logger.info(f"SIR comment bodies: {sir_comment_bodies}")
-                if (
-                    str(f"{UPDATE_TAG_TO_SKIP}") not in jira_comment
-                    and str(jira_comment) not in sir_comment_bodies
-                ):
+                add_comment = True
+                # iterate Security IR comments
+                for sir_comment in sir_comment_bodies:
+                    logger.info(f"Jira comment: {jira_comment} SIR comment: {sir_comment}")
+                    if str(f"{UPDATE_TAG_TO_SKIP}") in jira_comment:
+                        add_comment = False
+                    if f"{UPDATE_TAG_TO_ADD} {str(jira_comment)}" == sir_comment:
+                        add_comment = False
+                    if str(jira_comment) == sir_comment:
+                        add_comment = False
+                    
+                if add_comment == True:
                     jira_comment = f"{UPDATE_TAG_TO_ADD} {jira_comment}"
-                    logger.info(
-                        f"Adding comment {jira_comment}to Security IR case {security_ir_case_id}"
-                    )
+                    logger.info(f"Adding comment {jira_comment} to Security IR case {security_ir_case_id}")
                     _ = incident_service.add_comment_to_security_ir_case(
                         security_ir_case_id=security_ir_case_id,
                         ir_case_comment=jira_comment,
                     )
+                
 
             # add missing attachments to case
             security_ir_case = incident_service.get_security_ir_case(
@@ -351,7 +356,7 @@ class IncidentService:
                 )
                 return False
 
-        else:
+        elif security_ir_case_status != "Submitted":
             try:
                 request_kwargs = {
                     "caseId": security_ir_case_id,
@@ -407,12 +412,12 @@ class IncidentService:
             True if successful, False otherwise
         """
 
-        logger.info(f"Adding comment to Security IR case {security_ir_case_id}")
-        ir_case_comment = f"{UPDATE_TAG_TO_ADD} {ir_case_comment}"
+        #logger.info(f"Adding comment to Security IR case {security_ir_case_id}")
+        #ir_case_comment = f"{UPDATE_TAG_TO_ADD} {ir_case_comment}"
 
         try:
             request_kwargs = {"caseId": security_ir_case_id, "body": ir_case_comment}
-            logger.info(f"Request kwargs: {request_kwargs}")
+            #logger.info(f"Request kwargs: {request_kwargs}")
             _ = security_ir_client.create_case_comment(**request_kwargs)
         except Exception as e:
             logger.error(
