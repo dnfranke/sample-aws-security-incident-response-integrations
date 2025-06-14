@@ -17,8 +17,8 @@ from boto3.dynamodb.conditions import Key, Attr
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-UPDATE_TAG_TO_ADD = "[JIRA Update]"
 UPDATE_TAG_TO_SKIP = "[AWS Security Incident Response Update]"
+UPDATE_TAG_TO_ADD = "[JIRA Update]"
 
 # Try to import from Lambda layer
 try:
@@ -143,26 +143,40 @@ def process_jira_event(jira_issue: dict) -> None:
 
             # add missing comments to case
             # iterate Jira comments
+            
             for jira_comment in jira_comment_bodies:
                 add_comment = True
+                logger.info("IRC - Jira comment: '%s'", jira_comment)
                 # iterate Security IR comments
+
+                if UPDATE_TAG_TO_SKIP in jira_comment:
+                    add_comment = False
+                
                 for sir_comment in sir_comment_bodies:
-                    logger.info(f"Jira comment: {jira_comment} SIR comment: {sir_comment}")
-                    if str(f"{UPDATE_TAG_TO_SKIP}") in jira_comment:
-                        add_comment = False
-                    if f"{UPDATE_TAG_TO_ADD} {str(jira_comment)}" == sir_comment:
-                        add_comment = False
-                    if str(jira_comment) == sir_comment:
+                    logger.info("IRC - Security IR comment: '%s'", sir_comment)
+
+                    # extract Jira comment from tags
+                    pattern = r"\](.*)"
+                    match = re.search(pattern, jira_comment)
+                    if match:
+                        jira_comment = match.group(1).strip()
+
+                    # extract Security IR comment from tags
+                    pattern = r"\](.*)"
+                    match = re.search(pattern, sir_comment)
+                    if match:
+                        sir_comment = match.group(1).strip()
+
+                    if str(jira_comment).strip() == str(sir_comment).strip():
                         add_comment = False
                     
-                if add_comment == True:
+                if add_comment is True:
                     jira_comment = f"{UPDATE_TAG_TO_ADD} {jira_comment}"
-                    logger.info(f"Adding comment {jira_comment} to Security IR case {security_ir_case_id}")
+                    logger.info("Adding comment '%s' to Security IR case %s", jira_comment, security_ir_case_id)
                     _ = incident_service.add_comment_to_security_ir_case(
                         security_ir_case_id=security_ir_case_id,
                         ir_case_comment=jira_comment,
                     )
-                
 
             # add missing attachments to case
             security_ir_case = incident_service.get_security_ir_case(
@@ -187,7 +201,7 @@ def process_jira_event(jira_issue: dict) -> None:
                         f"Adding attachment to Security IR case {security_ir_case_id}"
                     )
 
-                    # add attaachment to Security IR case
+                    # add attachment to Security IR case
                     _ = incident_service.add_attachment_to_security_ir_case(
                         security_ir_case_id=security_ir_case_id,
                         attachment_filename=jira_attachment_name,
@@ -554,7 +568,7 @@ class IncidentService:
         Returns:
             True if add is successful, False otherwise
         """
-        comment = f"Jira issue has an attachment: {attachment_filename}. Download the file from the associated Jira issue."
+        comment = f"{UPDATE_TAG_TO_ADD} Jira issue has an attachment: {attachment_filename}. Download the file from the associated Jira issue."
 
         try:
             # TODO: add support to copy binary file attachment from Jira to Security IR
