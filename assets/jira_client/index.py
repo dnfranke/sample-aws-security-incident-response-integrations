@@ -189,8 +189,9 @@ class AttachmentService:
             jira_attachments: List of Jira attachments
         """
         for ir_attachment in ir_attachments:
-            ir_attachment_id = ir_attachment["id"]
-            ir_attachment_name = ir_attachment["filename"]
+            logger.info("Attachment: %s", ir_attachment)
+            ir_attachment_id = ir_attachment["attachmentId"]
+            ir_attachment_name = ir_attachment["fileName"]
 
             # Check if attachment already exists in Jira
             if not self.check_if_exists(jira_attachments, ir_attachment_name):
@@ -279,23 +280,40 @@ class CommentService:
             ir_comments: List of IR comments
             jira_comments: List of Jira comments
         """
-        ir_comment_bodies = [comment["body"] for comment in ir_comments]
+        sir_comment_bodies = [comment["body"] for comment in ir_comments]
         jira_comment_bodies = [comment.body for comment in jira_comments]
-        logger.info(f"IR comments: {ir_comment_bodies}")
-        logger.info(f"Jira comments: {jira_comment_bodies}")
 
-        # only add comments to the Jira issue if they are:
-        #   not in the Jira issue
-        #   did not originate from the Jira issue
-        for ir_comment in ir_comment_bodies:
-            logger.info(f"IR comment: {ir_comment}")
-            if (
-                str(f"{UPDATE_TAG_TO_SKIP}") not in ir_comment
-                and str(ir_comment) not in jira_comment_bodies
-            ):
-                logger.info(f"Adding comment to Jira issue {jira_issue_id}")
-                ir_comment = f"{UPDATE_TAG_TO_ADD} {ir_comment}"
-                self.jira_client.add_comment(jira_issue_id, ir_comment)
+        # iterate Security IR comments
+        for sir_comment in sir_comment_bodies:
+            #logger.info("JIR - SIR comment: '%s'", sir_comment)
+            add_comment = True
+
+            if UPDATE_TAG_TO_SKIP in sir_comment:
+                add_comment = False
+            
+            # iterate Jira comments
+            for jira_comment in jira_comment_bodies:
+                #logger.info("JIR - Jira comment: '%s'", jira_comment)
+
+                # extract Jira comment from tags
+                pattern = r"\](.*)"
+                match = re.search(pattern, jira_comment)
+                if match:
+                    jira_comment = match.group(1).strip()
+
+                # extract Security IR comment from tags
+                pattern = r"\](.*)"
+                match = re.search(pattern, sir_comment)
+                if match:
+                    sir_comment = match.group(1).strip()
+
+                if str(jira_comment).strip() == str(sir_comment).strip():
+                    add_comment = False
+
+            if add_comment is True:
+                jira_comment = f"{UPDATE_TAG_TO_ADD} {sir_comment}"
+                logger.info("Adding comment '%s' to Jira issue %s", jira_comment, jira_issue_id)
+                self.jira_client.add_comment(jira_issue_id, jira_comment)
 
 
 class IncidentService:
@@ -397,6 +415,7 @@ class IncidentService:
 
         logger.info(f"Created Jira issue {jira_issue_id} for new IR case {ir_case_id}")
         return jira_issue_id
+    
 
     def handle_case_update(
         self,
